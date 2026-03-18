@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SYSTEM | Daily Discipline</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lucide-static@0.321.0/font/lucide.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; margin: 0; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .habit-card { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+        .habit-card:active { transform: scale(0.97); }
+        .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(51, 65, 85, 0.5); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        const DEFAULT_HABITS = [
+            { id: 'h1', name: 'Wazifa', period: 'Fajr', type: 'essential', sun: true },
+            { id: 'h2', name: 'Quran Reading', period: 'Fajr', type: 'essential', sun: true },
+            { id: 'h3', name: 'Heavy Breakfast', period: 'Fajr', type: 'routine', sun: true },
+            { id: 'h4', name: 'Deep Work Session', period: 'Dhuhr', type: 'routine', sun: false },
+            { id: 'h5', name: 'Money Progress Check', period: 'Dhuhr', type: 'routine', sun: false },
+            { id: 'h6', name: 'Learning/Skill', period: 'Dhuhr', type: 'routine', sun: false },
+            { id: 'h7', name: 'Lunch', period: 'Dhuhr', type: 'routine', sun: true },
+            { id: 'h8', name: 'Gym / Exercise', period: 'Dhuhr', type: 'routine', sun: false },
+            { id: 'h9', name: 'Outdoor Activity', period: 'Asr', type: 'routine', sun: true },
+            { id: 'h10', name: 'Evening Quran', period: 'Maghrib', type: 'essential', sun: true },
+            { id: 'h11', name: 'Dinner', period: 'Maghrib', type: 'routine', sun: true },
+            { id: 'h12', name: 'Running (Optional)', period: 'Isha', type: 'routine', sun: false },
+            { id: 'h13', name: 'Family Time / Calls', period: 'Isha', type: 'routine', sun: true },
+            { id: 'h14', name: 'Sleep (10-11 PM)', period: 'Isha', type: 'essential', sun: true }
+        ];
+
+        const PRAYERS = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+
+        function App() {
+            // Live Time State
+            const [now, setNow] = useState(new Date());
+            const [showHistory, setShowHistory] = useState(false);
+            
+            const [data, setData] = useState(() => {
+                const saved = localStorage.getItem('system_v_final');
+                return saved ? JSON.parse(saved) : { 
+                    history: {}, 
+                    liteMode: false,
+                    city: 'Faisalabad',
+                    country: 'Pakistan'
+                };
+            });
+
+            const [prayerTimes, setPrayerTimes] = useState(null);
+            
+            const today = now.toISOString().split('T')[0];
+            const isSunday = now.getDay() === 0;
+            const currentDayData = data.history[today] || { habits: {}, prayers: {} };
+
+            // Update Clock every second
+            useEffect(() => {
+                const timer = setInterval(() => setNow(new Date()), 1000);
+                return () => clearInterval(timer);
+            }, []);
+
+            // Fetch Prayer Times
+            useEffect(() => {
+                fetch(`https://api.aladhan.com/v1/timingsByCity?city=${data.city}&country=${data.country}&method=2`)
+                    .then(res => res.json())
+                    .then(json => setPrayerTimes(json.data.timings))
+                    .catch(err => console.error("API Error"));
+            }, [data.city]);
+
+            useEffect(() => {
+                localStorage.setItem('system_v_final', JSON.stringify(data));
+            }, [data]);
+
+            const toggleHabit = (id) => {
+                const newHistory = { ...data.history };
+                const dayData = { ...currentDayData };
+                dayData.habits = { ...dayData.habits, [id]: !dayData.habits[id] };
+                newHistory[today] = dayData;
+                setData({ ...data, history: newHistory });
+            };
+
+            const togglePrayer = (p) => {
+                const newHistory = { ...data.history };
+                const dayData = { ...currentDayData };
+                dayData.prayers = { ...dayData.prayers, [p]: !dayData.prayers?.[p] };
+                newHistory[today] = dayData;
+                setData({ ...data, history: newHistory });
+            };
+
+            const activeHabits = DEFAULT_HABITS.filter(h => {
+                if (data.liteMode && h.type !== 'essential') return false;
+                if (isSunday && !h.sun) return false;
+                return true;
+            });
+
+            const nextIncomplete = activeHabits.find(h => !currentDayData.habits[h.id]);
+
+            // Calculate Completion %
+            const calculateScore = (dateKey) => {
+                const day = data.history[dateKey];
+                if (!day || !day.habits) return 0;
+                const total = activeHabits.length;
+                const done = Object.values(day.habits).filter(Boolean).length;
+                return Math.round((done / total) * 100);
+            };
+
+            return (
+                <div className="min-h-screen pb-32">
+                    {/* Sticky Header with Clock & Location */}
+                    <div className="sticky top-0 z-50 glass p-4">
+                        <div className="max-w-xl mx-auto flex justify-between items-start">
+                            <div className="flex flex-col">
+                                <h1 className="text-xl font-black tracking-tighter leading-none">SYSTEM</h1>
+                                <input 
+                                    className="bg-transparent text-[10px] text-blue-500 uppercase font-black outline-none w-32"
+                                    value={data.city}
+                                    onChange={(e) => setData({...data, city: e.target.value})}
+                                />
+                            </div>
+                            <div className="text-right">
+                                <div className="text-lg font-mono font-bold leading-none uppercase">
+                                    {now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                </div>
+                                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">
+                                    {now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="max-w-xl mx-auto p-4 space-y-6">
+                        
+                        {/* Progress Bar */}
+                        <div className="space-y-2">
+                            <div className="flex justify-between items-end px-1">
+                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Daily Discipline</span>
+                                <span className="text-sm font-black text-blue-500">{calculateScore(today)}%</span>
+                            </div>
+                            <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                                <div className="h-full bg-blue-600 transition-all duration-700" style={{width: `${calculateScore(today)}%`}}></div>
+                            </div>
+                        </div>
+
+                        {/* History Trigger */}
+                        <button 
+                            onClick={() => setShowHistory(!showHistory)}
+                            className="w-full py-3 rounded-2xl border border-slate-800 bg-slate-900/30 text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-center gap-2"
+                        >
+                            <i className="lucide-history text-xs"></i> 
+                            {showHistory ? 'Close Progress Log' : 'View Weekly Progress'}
+                        </button>
+
+                        {/* History Log Panel */}
+                        {showHistory && (
+                            <div className="grid grid-cols-7 gap-2 animate-in fade-in slide-in-from-top-4 duration-300">
+                                {[...Array(7)].map((_, i) => {
+                                    const d = new Date();
+                                    d.setDate(d.getDate() - (6 - i));
+                                    const key = d.toISOString().split('T')[0];
+                                    const score = calculateScore(key);
+                                    return (
+                                        <div key={key} className="flex flex-col items-center gap-1">
+                                            <div className="h-16 w-full bg-slate-900 rounded-lg relative overflow-hidden flex items-end border border-slate-800">
+                                                <div className="w-full bg-blue-600/40" style={{height: `${score}%`}}></div>
+                                                <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold">{score}%</span>
+                                            </div>
+                                            <span className="text-[8px] font-bold text-slate-500 uppercase">{d.toLocaleDateString('en-US', { weekday: 'short' })}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Auto-Flow Focus Card */}
+                        {nextIncomplete && !showHistory && (
+                            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-6 shadow-xl shadow-blue-900/30 habit-card border border-blue-400/20">
+                                <div className="flex justify-between items-start mb-1">
+                                    <p className="text-blue-100 text-[10px] font-black uppercase tracking-widest">Protocol Active</p>
+                                    <span className="text-[10px] font-black text-white bg-black/20 px-2 py-0.5 rounded uppercase">{nextIncomplete.period}</span>
+                                </div>
+                                <h2 className="text-3xl font-black text-white mb-4 tracking-tighter">{nextIncomplete.name}</h2>
+                                <button 
+                                    onClick={() => toggleHabit(nextIncomplete.id)}
+                                    className="w-full bg-white text-blue-700 py-4 rounded-2xl font-black text-sm shadow-xl active:scale-95 transition"
+                                >
+                                    COMPLETE TASK
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Prayer Anchors */}
+                        <div className="grid grid-cols-5 gap-2 pt-2">
+                            {PRAYERS.map(p => (
+                                <button 
+                                    key={p}
+                                    onClick={() => togglePrayer(p)}
+                                    className={`py-3 rounded-2xl border flex flex-col items-center gap-1 transition-all habit-card ${currentDayData.prayers?.[p] ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-900/20' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
+                                >
+                                    <span className="text-[9px] font-black uppercase">{p}</span>
+                                    <span className="text-[8px] font-bold opacity-60">{prayerTimes ? prayerTimes[p] : '--:--'}</span>
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Habit Groups */}
+                        <div className="space-y-8 pt-4">
+                            {PRAYERS.map(period => {
+                                const habits = activeHabits.filter(h => h.period === period);
+                                if (habits.length === 0) return null;
+                                return (
+                                    <div key={period} className="space-y-3">
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em]">{period} Windows</span>
+                                            <div className="h-[1px] bg-slate-800/50 flex-1"></div>
+                                        </div>
+                                        <div className="grid gap-2">
+                                            {habits.map(h => (
+                                                <div 
+                                                    key={h.id}
+                                                    onClick={() => toggleHabit(h.id)}
+                                                    className={`p-4 rounded-2xl border flex justify-between items-center cursor-pointer habit-card ${currentDayData.habits?.[h.id] ? 'bg-slate-900/30 border-slate-800/50 opacity-40' : 'bg-slate-900 border-slate-800 hover:border-slate-700'}`}
+                                                >
+                                                    <span className={`font-bold text-sm ${currentDayData.habits?.[h.id] ? 'line-through' : 'text-slate-200'}`}>{h.name}</span>
+                                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${currentDayData.habits?.[h.id] ? 'bg-blue-500 border-blue-500 shadow-lg shadow-blue-900/40' : 'border-slate-700'}`}>
+                                                        {currentDayData.habits?.[h.id] && <i className="lucide-check text-[10px] text-white"></i>}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Bottom Utility Bar */}
+                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex gap-4 glass px-6 py-3 rounded-full border border-slate-700/50 shadow-2xl">
+                        <button 
+                            onClick={() => setData({...data, liteMode: !data.liteMode})}
+                            className={`text-[10px] font-black uppercase tracking-widest ${data.liteMode ? 'text-orange-500' : 'text-slate-500'}`}
+                        >
+                            Lite: {data.liteMode ? 'ON' : 'OFF'}
+                        </button>
+                        <div className="w-[1px] bg-slate-700"></div>
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isSunday ? 'Sunday Mode' : 'Work Protocol'}</span>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
